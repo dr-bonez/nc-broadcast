@@ -1,9 +1,10 @@
 [package]
 authors = ["Aiden McClelland <me@drbonez.dev>"]
-description = "A tool for hosting a file on a port. The file can be downloaded with netcat."
+description = "A utility for broadcasting stdin to any client that connects with netcat"
 name = "nc-broadcast"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
