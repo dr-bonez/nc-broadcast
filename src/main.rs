@@ -77,9 +77,12 @@ impl Read for BroadcastPipe {
 }
 
 fn main() {
-    let app = clap::App::new("nc-broadcast").arg(clap::Arg::new("bind").required(true));
+    let app = clap::App::new("nc-broadcast")
+        .arg(clap::Arg::new("bind").required(true))
+        .arg(clap::Arg::new("tee").long("tee"));
     let args = app.get_matches();
     let bind: SocketAddr = args.value_of("bind").unwrap().parse().unwrap();
+    let tee = args.is_present("tee");
     let mut pipe = BroadcastPipe::new();
     let read_pipe = pipe.clone();
     thread::spawn(move || {
@@ -87,6 +90,12 @@ fn main() {
         pipe.complete.store(true, Ordering::SeqCst);
         pipe.ready.notify_all();
     });
+    if tee {
+        let mut thread_read_pipe = read_pipe.clone();
+        thread::spawn(move || {
+            std::io::copy(&mut thread_read_pipe, &mut std::io::stdout()).unwrap();
+        });
+    }
     let listener = TcpListener::bind(bind).unwrap();
     loop {
         let (mut conn, ip) = listener.accept().unwrap();
