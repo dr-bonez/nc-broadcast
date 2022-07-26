@@ -5,7 +5,6 @@ use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::thread;
-use std::time::Duration;
 
 pub struct Notify(Condvar, Mutex<()>);
 impl Notify {
@@ -100,6 +99,7 @@ fn main() {
         pipe.complete.fetch_sub(1, Ordering::SeqCst);
         pipe.ready.notify_all();
     });
+
     for input in args
         .values_of("input")
         .into_iter()
@@ -109,13 +109,34 @@ fn main() {
         let mut pipe = read_pipe.clone();
         pipe.complete.fetch_add(1, Ordering::SeqCst);
         thread::spawn(move || {
-            while !Path::new(&input).exists() {
-                std::thread::sleep(Duration::from_secs(1));
+            let mut buffer;
+            let mut notify = inotify::Inotify::init().unwrap();
+            let input_path = Path::new(&input);
+            let wd = notify
+                .add_watch(
+                    input_path.parent().unwrap(),
+                    inotify::WatchMask::CREATE | inotify::WatchMask::ONLYDIR,
+                )
+                .unwrap();
+            if !input_path.exists() {
+                buffer = vec![0; inotify::get_buffer_size(input_path.parent().unwrap()).unwrap()];
+                for event in notify.read_events_blocking(&mut buffer).unwrap() {
+                    if event.mask == inotify::EventMask::CREATE
+                        && event.name == input_path.file_name()
+                    {
+                        break;
+                    }
+                }
             }
-            let mut file = File::open(&input).unwrap();
+            notify.rm_watch(wd).unwrap();
+            let mut file = File::open(&input_path).unwrap();
+            buffer = vec![0; inotify::get_buffer_size(input_path).unwrap()];
+            notify
+                .add_watch(&input_path, inotify::WatchMask::MODIFY)
+                .unwrap();
             loop {
                 std::io::copy(&mut file, &mut pipe).unwrap();
-                std::thread::sleep(Duration::from_secs(1));
+                notify.read_events_blocking(&mut buffer).unwrap().next();
             }
         });
     }
